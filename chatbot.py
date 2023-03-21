@@ -9,7 +9,6 @@ class Chatbot:
         self.engine = "gpt-3.5-turbo"
         self.temperature = 0.8
         self._create_tables()
-        
 
         if conversation_id is None:
             query = "SELECT MAX(id) FROM conversations"
@@ -20,10 +19,18 @@ class Chatbot:
                 self.conversation_id = 1
             else:
                 self.conversation_id = max_id + 1
+
+            # Create a new conversation record in the database
+            self._query_db("""
+                INSERT INTO conversations (id)
+                VALUES (?)
+            """, (self.conversation_id,))
+
         else:
             self.conversation_id = conversation_id
 
         openai.api_key = os.getenv("OPENAI_API_KEY")
+
     
     def talk_to_me(self, prompt, context=None):
         if context is None:
@@ -88,7 +95,12 @@ class Chatbot:
         
     def _get_context(self):
         context = self._query_db(
-            f"SELECT role, content FROM messages WHERE conversation = {self.conversation_id} ORDER BY conversation_position",
+            f"""
+                SELECT role, content
+                FROM messages
+                WHERE conversation = {self.conversation_id}
+                ORDER BY conversation_position
+            """,
             fetch="all"
         )
         return [{"role": role, "content": content} for role, content in context]
