@@ -8,6 +8,8 @@ def test_db():
     db._create_tables()
     yield db
 
+    os.remove("test.db")
+
 
 def test_get_message(test_db):
     # Insert a sample message
