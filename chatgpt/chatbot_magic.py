@@ -18,7 +18,7 @@ class ChatbotMagics(Magics):
         if _input[0] == "help":
             print(
                 """
-                Which of these commands is available via the %gpt magic:
+                These commands are available via the %gpt magic:
 
                 eg. 
                 
