@@ -1,4 +1,7 @@
 __pycache__
 .ipynb_checkpoints
-chat.db
-test.db
+*.db
+build
+dist
+*.egg-info
+.coverage

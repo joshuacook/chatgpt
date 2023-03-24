@@ -1,8 +1,10 @@
 import pytest
+import pandas as pd
 import os
 from chatgpt.chatbot import Chatbot
 import unittest.mock as mock
 import openai
+import sys
 
 
 def mock_openai_response():
@@ -109,3 +111,166 @@ def test_truncate_context(chatbot):
 
         summary_message = truncated_context[0]
         assert summary_message["role"] == "assistant"
+
+
+def test_delete_conversation(chatbot):
+    with mock.patch.object(
+        openai.ChatCompletion, "create", return_value=mock_openai_response()
+    ):
+        conversation_id = chatbot.upload_conversation(
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there! How can I help you?"},
+                {"role": "user", "content": "Can you tell me a joke?"},
+                {
+                    "role": "assistant",
+                    "content": "Sure, why did the chicken cross the road?",
+                },
+                {"role": "user", "content": "I don't know, why?"},
+                {"role": "assistant", "content": "To get to the other side!"},
+            ]
+        )
+
+    assert conversation_id in chatbot.list_conversations()["id"].tolist()
+
+    chatbot.delete_conversation(conversation_id)
+
+    assert conversation_id not in chatbot.list_conversations()["id"].tolist()
+
+    with mock.patch.object(
+        openai.ChatCompletion, "create", return_value=mock_openai_response()
+    ):
+        conversation_id_1 = chatbot.upload_conversation(
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there! How can I help you?"},
+                {"role": "user", "content": "Can you tell me a joke?"},
+                {
+                    "role": "assistant",
+                    "content": "Sure, why did the chicken cross the road?",
+                },
+                {"role": "user", "content": "I don't know, why?"},
+                {"role": "assistant", "content": "To get to the other side!"},
+            ]
+        )
+        conversation_id_2 = chatbot.upload_conversation(
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there! How can I help you?"},
+                {"role": "user", "content": "Can you tell me a joke?"},
+                {
+                    "role": "assistant",
+                    "content": "Sure, why did the chicken cross the road?",
+                },
+                {"role": "user", "content": "I don't know, why?"},
+                {"role": "assistant", "content": "To get to the other side!"},
+            ]
+        )
+
+    assert conversation_id_1 in chatbot.list_conversations()["id"].tolist()
+    assert conversation_id_2 in chatbot.list_conversations()["id"].tolist()
+
+    chatbot.delete_conversation([conversation_id_1, conversation_id_2])
+
+    assert conversation_id_1 not in chatbot.list_conversations()["id"].tolist()
+    assert conversation_id_2 not in chatbot.list_conversations()["id"].tolist()
+
+
+def test_get_messages(chatbot):
+    with mock.patch.object(
+        openai.ChatCompletion, "create", return_value=mock_openai_response()
+    ):
+        conversation_id = chatbot.upload_conversation(
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there! How can I help you?"},
+                {"role": "user", "content": "Can you tell me a joke?"},
+                {
+                    "role": "assistant",
+                    "content": "Sure, why did the chicken cross the road?",
+                },
+                {"role": "user", "content": "I don't know, why?"},
+                {"role": "assistant", "content": "To get to the other side!"},
+            ]
+        )
+
+    messages_df = chatbot.get_messages()
+
+    expected_df = pd.DataFrame(
+        [
+            {
+                "id": 1,
+                "role": "user",
+                "content": "Hello",
+                "conversation_id": conversation_id,
+                "conversation_position": 0,
+                "token_count": 1,
+            },
+            {
+                "id": 2,
+                "role": "assistant",
+                "content": "Hi there! How can I help you?",
+                "conversation_id": conversation_id,
+                "conversation_position": 1,
+                "token_count": 9,
+            },
+            {
+                "id": 3,
+                "role": "user",
+                "content": "Can you tell me a joke?",
+                "conversation_id": conversation_id,
+                "conversation_position": 2,
+                "token_count": 7,
+            },
+            {
+                "id": 4,
+                "role": "assistant",
+                "content": "Sure, why did the chicken cross the road?",
+                "conversation_id": conversation_id,
+                "conversation_position": 3,
+                "token_count": 10,
+            },
+            {
+                "id": 5,
+                "role": "user",
+                "content": "I don't know, why?",
+                "conversation_id": conversation_id,
+                "conversation_position": 4,
+                "token_count": 7,
+            },
+            {
+                "id": 6,
+                "role": "assistant",
+                "content": "To get to the other side!",
+                "conversation_id": conversation_id,
+                "conversation_position": 5,
+                "token_count": 7,
+            },
+        ]
+    )
+    pd.testing.assert_frame_equal(messages_df, expected_df)
+
+
+def test_print_context(chatbot, capsys):
+    conversation = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there! How can I help you?"},
+        {"role": "user", "content": "Can you tell me a joke?"},
+        {"role": "assistant", "content": "Sure, why did the chicken cross the road?"},
+        {"role": "user", "content": "I don't know, why?"},
+        {"role": "assistant", "content": "To get to the other side!"},
+    ]
+
+    with mock.patch.object(
+        openai.ChatCompletion, "create", return_value=mock_openai_response()
+    ):
+        chatbot.upload_conversation(conversation)
+
+    chatbot.title = None
+
+    chatbot.print_context(markdown=False)
+    sys.stdout.flush()
+
+    captured_output = capsys.readouterr().out
+    for statement in conversation:
+        assert statement["content"] in captured_output

@@ -1,7 +1,4 @@
-import re
 import sqlite3
-import boto3
-from boto3.dynamodb.conditions import Key
 import pandas as pd
 
 
@@ -16,7 +13,14 @@ class LocalDatabase:
             WHERE content LIKE ?
         """
         data = self._query_db(query, (search_string,), fetch="all")
-        columns = ["id", "role", "content", "conversation", "conversation_position"]
+        columns = [
+            "id",
+            "role",
+            "content",
+            "conversation_id",
+            "conversation_position",
+            "token_count",
+        ]
         df = pd.DataFrame(data, columns=columns)
         return df
 
@@ -27,9 +31,36 @@ class LocalDatabase:
         """
         self._query_db(query, (message_id,))
 
+    def delete_conversation(self, conversation_id):
+        query = """
+            SELECT COUNT(*)
+            FROM messages
+            WHERE conversation_id = ?
+        """
+        message_count = self._query_db(query, (conversation_id,), fetch="one")[0]
+
+        if message_count > 0:
+            query = """
+                DELETE FROM messages
+                WHERE conversation_id = ?
+            """
+            self._query_db(query, (conversation_id,))
+
+        query = """
+            DELETE FROM conversations
+            WHERE id = ?
+        """
+        self._query_db(query, (conversation_id,))
+
     def get_message(self, message_id):
         query = """
-            SELECT id, role, content, conversation, conversation_position
+            SELECT
+                id,
+                role,
+                content,
+                conversation_id,
+                conversation_position,
+                token_count
             FROM messages
             WHERE id = ?
         """
@@ -39,12 +70,41 @@ class LocalDatabase:
                 "id": result[0],
                 "role": result[1],
                 "content": result[2],
-                "conversation": result[3],
+                "conversation_id": result[3],
                 "conversation_position": result[4],
+                "token_count": result[5],
             }
             return message
         else:
             return None
+
+    def get_messages(self, predicate_sql=None):
+        """
+        Get all messages with their attributes as a pandas DataFrame.
+
+        :param predicate_sql: An optional SQL WHERE clause to filter the results.
+        :return: A pandas DataFrame containing message attributes.
+        """
+        query = "SELECT * FROM messages"
+
+        if predicate_sql is not None:
+            query += f" WHERE {predicate_sql}"
+
+        result = self._query_db(query, fetch="all")
+
+        messages_df = pd.DataFrame(
+            result,
+            columns=[
+                "id",
+                "role",
+                "content",
+                "conversation_id",
+                "conversation_position",
+                "token_count",
+            ],
+        )
+
+        return messages_df
 
     def list_conversations(self):
         query = """
@@ -56,19 +116,6 @@ class LocalDatabase:
         df = pd.DataFrame(data, columns=columns)
         return df
 
-    def update_message(self, message_id, regex, substitution):
-        message = self.get_message(message_id)
-        if message:
-            updated_content = re.sub(regex, substitution, message["content"])
-            query = """
-                UPDATE messages
-                SET content = ?
-                WHERE id = ?
-            """
-            self._query_db(query, (updated_content, message_id))
-        else:
-            print("Message not found.")
-
     def _create_tables(self):
         self._query_db(
             """
@@ -76,8 +123,9 @@ class LocalDatabase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT,
                 content TEXT,
-                conversation INTEGER,
-                conversation_position INTEGER
+                conversation_id INTEGER,
+                conversation_position INTEGER,
+                token_count INTEGER
             )
         """
         )
@@ -97,7 +145,7 @@ class LocalDatabase:
             f"""
                 SELECT role, content
                 FROM messages
-                WHERE conversation = {conversation_id}
+                WHERE conversation_id = {conversation_id}
                 ORDER BY conversation_position
             """,
             fetch="all",
@@ -149,17 +197,26 @@ class LocalDatabase:
             (conversation_id,),
         )
 
-    def _put_message(self, message, conversation_id, conversation_position):
+    def _put_message(
+        self, message, conversation_id, conversation_position, token_count
+    ):
         self._query_db(
             """
-            INSERT INTO messages (role, content, conversation, conversation_position)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO messages (
+                role,
+                content,
+                conversation_id,
+                conversation_position,
+                token_count
+            )
+            VALUES (?, ?, ?, ?, ?)
         """,
             (
                 message["role"],
                 message["content"],
                 conversation_id,
                 conversation_position,
+                token_count,
             ),
         )
 
@@ -176,61 +233,3 @@ class LocalDatabase:
             WHERE id = ?
         """
         self._query_db(query, (title, conversation_id))
-
-
-class DynamoDatabase:
-    def __init__(self) -> None:
-        self.dynamodb = boto3.resource("dynamodb")
-        self.messages_table = self.dynamodb.Table("messages")
-        self.conversations_table = self.dynamodb.Table("conversations")
-
-        self._create_tables()
-
-    def _create_tables(self):
-        # Create tables in DynamoDB (if not already created)
-        pass
-
-    def _get_context(self, conversation_id):
-        response = self.messages_table.query(
-            KeyConditionExpression=Key("conversation").eq(conversation_id),
-            ScanIndexForward=True,
-        )
-        return [
-            {"role": item["role"], "content": item["content"]}
-            for item in response["Items"]
-        ]
-
-    def _get_max_conversation_id(self):
-        max_id_resp = self.conversations_table.scan(
-            Select="SPECIFIC_ATTRIBUTES",
-            ProjectionExpression="id",
-        )
-        return max([item["id"] for item in max_id_resp["Items"]], default=0)
-
-    def _put_conversation(self, conversation_id):
-        self.conversations_table.put_item(
-            Item={"id": conversation_id, "last_updated": str(self._get_utc_now())}
-        )
-
-    def _put_message(self, message, conversation_id, conversation_position):
-        self.messages_table.put_item(
-            Item={
-                "id": f"{conversation_id}-{conversation_position}",
-                "role": message["role"],
-                "content": message["content"],
-                "conversation": conversation_id,
-                "conversation_position": conversation_position,
-            }
-        )
-
-    def _update_conversation(self, conversation_id):
-        self.conversations_table.update_item(
-            Key={"id": conversation_id},
-            UpdateExpression="SET last_updated = :last_updated",
-            ExpressionAttributeValues={":last_updated": str(self._get_utc_now())},
-        )
-
-    def _get_utc_now(self):
-        from datetime import datetime
-
-        return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"

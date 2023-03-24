@@ -1,9 +1,6 @@
+-e .
 black
-boto3
 flake8
 ipdb
-jupyterlab
-openai
-gradio
 pytest
 pytest-cov
