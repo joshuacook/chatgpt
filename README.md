@@ -1,6 +1,7 @@
 1. `conda create -n chatgpt python=3.10`
 2. `conda activate chatgpt`
 3. `pip install -r requirements.txt`
+4. `pip install -e .`
 4. `jupyter lab`
 
 
