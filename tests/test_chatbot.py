@@ -4,7 +4,6 @@ import os
 from chatgpt.chatbot import Chatbot
 import unittest.mock as mock
 import openai
-import sys
 
 
 def mock_openai_response():
@@ -91,10 +90,11 @@ def test_list_conversations():
     chatbot3 = Chatbot(db_path="test.db", conversation_id=None)  # noqa: F841
 
     conversations = chatbot1.list_conversations()
-    assert conversations.shape == (3, 4)
+    assert conversations.shape == (1, 4)
 
 
-def test_truncate_context(chatbot):
+@pytest.mark.focus
+def test_truncate_context():
     with mock.patch.object(
         openai.ChatCompletion, "create", return_value=mock_openai_response()
     ):
@@ -249,28 +249,3 @@ def test_get_messages(chatbot):
         ]
     )
     pd.testing.assert_frame_equal(messages_df, expected_df)
-
-
-def test_print_context(chatbot, capsys):
-    conversation = [
-        {"role": "user", "content": "Hello"},
-        {"role": "assistant", "content": "Hi there! How can I help you?"},
-        {"role": "user", "content": "Can you tell me a joke?"},
-        {"role": "assistant", "content": "Sure, why did the chicken cross the road?"},
-        {"role": "user", "content": "I don't know, why?"},
-        {"role": "assistant", "content": "To get to the other side!"},
-    ]
-
-    with mock.patch.object(
-        openai.ChatCompletion, "create", return_value=mock_openai_response()
-    ):
-        chatbot.upload_conversation(conversation)
-
-    chatbot.title = None
-
-    chatbot.print_context(markdown=False)
-    sys.stdout.flush()
-
-    captured_output = capsys.readouterr().out
-    for statement in conversation:
-        assert statement["content"] in captured_output

@@ -1,6 +1,8 @@
 -e .
 black
 flake8
+flask
+flask-cors
 ipdb
 pytest
 pytest-cov

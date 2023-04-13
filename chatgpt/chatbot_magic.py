@@ -2,11 +2,12 @@ from IPython.core.magic import Magics, magics_class, line_magic, cell_magic
 from chatgpt.chatbot import Chatbot
 from IPython.display import display
 
+
 @magics_class
 class ChatbotMagics(Magics):
     def __init__(self, shell):
         super().__init__(shell)
-        self.chatbot = Chatbot()    
+        self.chatbot = Chatbot()
 
     @cell_magic
     def chat(self, line, cell):
@@ -20,11 +21,11 @@ class ChatbotMagics(Magics):
                 """
                 These commands are available via the %gpt magic:
 
-                eg. 
-                
+                eg.
+
                 %gpt help
                 %gpt ls conversations
-                
+
                 help: print this message
                 ls conversations: list conversations
                 ls messages: list messages
@@ -70,8 +71,6 @@ class ChatbotMagics(Magics):
             print("system", self.chatbot.system, sep=": ")
             print("engine", self.chatbot.engine, sep=": ")
             print("temperature", self.chatbot.temperature, sep=": ")
-
-
 
 
 # Function to load the extension in IPython

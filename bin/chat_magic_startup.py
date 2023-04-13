@@ -3,4 +3,4 @@ from chatgpt.chatbot import Chatbot
 from IPython import get_ipython
 
 load_ipython_extension(get_ipython())
-chatbot = Chatbot(database='local')
+chatbot = Chatbot(database="local")

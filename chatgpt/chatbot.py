@@ -1,9 +1,9 @@
 import openai
 import os
-import shutil
 from .database import LocalDatabase
 from IPython.display import display, Markdown
 import tiktoken
+
 HOME = os.getenv("HOME")
 
 
@@ -14,10 +14,12 @@ class Chatbot:
         database: str = "local",
         db_path: str = None,
         max_tokens: int = 3200,
-        system=None
+        system=None,
     ):
         if db_path is None:
             self.db_path = f"{HOME}/.chatgpt/chat.db"
+        else:
+            self.db_path = db_path
         os.makedirs(f"{HOME}/.chatgpt", exist_ok=True)
         self.conversation_id = conversation_id
         self.engine = "gpt-3.5-turbo"
@@ -29,7 +31,9 @@ class Chatbot:
             self.database = LocalDatabase(db_file=self.db_path)
         self.database._create_tables()
         current_conversations = self.list_conversations()
-        empty_conversations = current_conversations[current_conversations["title"].isnull()]
+        empty_conversations = current_conversations[
+            current_conversations["title"].isnull()
+        ]
         self.delete_conversation(empty_conversations["id"].tolist())
 
         if conversation_id is None:
@@ -55,8 +59,7 @@ class Chatbot:
             context = self.database._get_context(self.conversation_id)
         if self.system is not None:
             context = [{"role": "system", "content": self.system}] + context
-
-        new_message = self._submit_prompt_for_streaming(prompt, context)
+        new_message = self._submit_prompt(prompt, context)
         prompt_token_count = self._count_tokens(prompt)
         new_message_token_count = self._count_tokens(new_message["content"])
         self.database._put_message(
@@ -162,22 +165,25 @@ class Chatbot:
             return 0
 
     def _generate_summary(self, context):
-        new_message = self._submit_prompt_for_streaming(
+        new_message = self._submit_prompt(
             "Can you summarize this conversation:\n\n", context, display=False
         )
         return new_message["content"].replace("\n", " ")
 
     def _generate_title(self, context):
         print("\n\nGenerating title...\n")
-        new_message = self._submit_prompt_for_streaming(
+        new_message = self._submit_prompt(
             "Can you generate a title for this conversation:\n\n", context
         )
         return new_message["content"].replace("\n", " ")
 
-    def _stream_content(self, response, display):
+    def _get_content(self, response, display):
         new_message = {"content": ""}
         for chunk in response:
-            delta = chunk["choices"][0]["delta"]
+            try:
+                delta = chunk["choices"][0]["delta"]
+            except TypeError:
+                breakpoint()
             if "role" in delta.keys():
                 role = delta["role"]
                 new_message["role"] = role
@@ -190,7 +196,18 @@ class Chatbot:
                     print(content, end="")
         return new_message
 
-    def _submit_prompt_for_streaming(
+    def _get_content_streamed(self, response):
+        message = ""
+        for chunk in response:
+            delta = chunk["choices"][0]["delta"]
+            if "content" in delta.keys():
+                content = delta["content"]
+                message += content
+                if "\n" in content:
+                    yield message
+                    message = ""
+
+    def _submit_prompt(
         self,
         prompt,
         context,
@@ -212,12 +229,43 @@ class Chatbot:
             model=self.engine,
             messages=context,
             temperature=temperature,
+            stream=False,
+            max_tokens=max_tokens,
+            n=n,
+        )
+        content = self._get_content(response, display=display)
+        return content
+
+    def _submit_prompt_for_streaming(
+        self,
+        prompt,
+        context,
+        engine=None,
+        temperature=None,
+        max_tokens=None,
+        n=1,
+        display=True,
+        **kwargs,
+    ):
+        if engine is None:
+            engine = self.engine
+        if temperature is None:
+            temperature = self.temperature
+        if max_tokens is None:
+            max_tokens = self.max_tokens
+
+        context.append({"role": "user", "content": prompt})
+        response = openai.ChatCompletion.create(
+            model=self.engine,
+            messages=context,
+            temperature=temperature,
             stream=True,
             max_tokens=max_tokens,
-            n=1,
+            n=n,
         )
-        new_message = self._stream_content(response, display=display)
-        return new_message
+        content = self._get_content_streamed(response)
+        for new_message in content:
+            yield new_message
 
     def _truncate_context(self, context):
         truncated_context = []
