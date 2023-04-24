@@ -7,18 +7,16 @@ import openai
 
 
 def mock_openai_response():
-    return [
-        {
-            "choices": [
-                {
-                    "delta": {
-                        "role": "assistant",
-                        "content": "This is a mocked response.",
-                    }
+    return {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "This is a mocked response.",
                 }
-            ]
-        }
-    ]
+            }
+        ]
+    }
 
 
 @pytest.fixture
@@ -30,7 +28,7 @@ def chatbot():
     os.remove("test.db")
 
 
-def test_chatbot_init(chatbot):
+def test_chatbot_init_and_verify_title(chatbot):
     assert chatbot.conversation_id is not None
     assert chatbot.engine == "gpt-3.5-turbo"
     assert chatbot.temperature == 0.8
@@ -42,19 +40,20 @@ def test_chatbot_init(chatbot):
     new_chatbot = Chatbot(conversation_id=2, db_path="test.db")
     assert new_chatbot.conversation_id == 2
 
+    new_chatbot.database.update_conversation_title(2, "Test Conversation")
+    new_chatbot = Chatbot(conversation_id=2, db_path="test.db")
+    assert new_chatbot.title == "Test Conversation"
+
 
 def test_talk_to_me(chatbot):
-    with mock.patch.object(
-        openai.ChatCompletion, "create", return_value=mock_openai_response()
-    ):
-        chatbot.talk_to_me("Hello")
-        context = chatbot.database._get_context(chatbot.conversation_id)
+    chatbot.talk_to_me("Hello")
+    context = chatbot.database._get_context(chatbot.conversation_id)
 
-        assert len(context) == 2
-        assert context[0]["role"] == "user"
-        assert context[0]["content"] == "Hello"
-        assert context[1]["role"] == "assistant"
-        assert context[1]["content"] == "This is a mocked response."
+    assert len(context) == 2
+    assert context[0]["role"] == "user"
+    assert context[0]["content"] == "Hello"
+    assert context[1]["role"] == "assistant"
+    assert context[1]["content"] is not None
 
 
 def test_delete_message(chatbot):

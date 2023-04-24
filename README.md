@@ -1,3 +1,11 @@
+# ChatGPT Jupyter Magic
+
+Here is a demo of me using the tooling:
+
+![Chat Magic Demo](data/chatmagic.gif)
+
+## Installation
+
 1. `conda create -n chatgpt python=3.10`
 2. `conda activate chatgpt`
 3. `pip install -r requirements.txt`

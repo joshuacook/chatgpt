@@ -54,25 +54,6 @@ class Chatbot:
 
         openai.api_key = os.getenv("OPENAI_API_KEY")
 
-    def talk_to_me(self, prompt, context=None):
-        if context is None:
-            context = self.database._get_context(self.conversation_id)
-        if self.system is not None:
-            context = [{"role": "system", "content": self.system}] + context
-        new_message = self._submit_prompt(prompt, context)
-        prompt_token_count = self._count_tokens(prompt)
-        new_message_token_count = self._count_tokens(new_message["content"])
-        self.database._put_message(
-            context[-1], self.conversation_id, len(context) - 1, prompt_token_count
-        )
-        self.database._put_message(
-            new_message, self.conversation_id, len(context), new_message_token_count
-        )
-
-        if self.title is None:
-            self.update_conversation_title()
-        self.database._update_conversation(self.conversation_id)
-
     def delete_message(self, message_id):
         self.database.delete_message(message_id)
 
@@ -110,8 +91,29 @@ class Chatbot:
             else:
                 print(message["role"].upper(), message["content"], sep="\n", end="\n\n")
 
+    def talk_to_me(self, prompt, context=None):
+        if context is None:
+            context = self.database._get_context(self.conversation_id)
+        if self.system is not None:
+            context = [{"role": "system", "content": self.system}] + context
+        new_message = self._submit_prompt(prompt, context)
+        prompt_token_count = self._count_tokens(prompt)
+        new_message_token_count = self._count_tokens(new_message["content"])
+        self.database._put_message(
+            context[-1], self.conversation_id, len(context) - 1, prompt_token_count
+        )
+        self.database._put_message(
+            new_message, self.conversation_id, len(context), new_message_token_count
+        )
+
+        if self.title is None:
+            self.update_conversation_title()
+        self.database._update_conversation(self.conversation_id)
+
     def update_conversation_title(self, title=None):
         context = self.database._get_context(self.conversation_id)
+        if title is None:
+            title = self._get_title(self.conversation_id)
         if title is None:
             self.title = self._generate_title(context[:1])
         else:
@@ -178,23 +180,12 @@ class Chatbot:
         return new_message["content"].replace("\n", " ")
 
     def _get_content(self, response, display):
-        new_message = {"content": ""}
-        for chunk in response:
-            try:
-                delta = chunk["choices"][0]["delta"]
-            except TypeError:
-                breakpoint()
-            if "role" in delta.keys():
-                role = delta["role"]
-                new_message["role"] = role
-                if display:
-                    print(role, end=" ")
-            if "content" in delta.keys():
-                content = delta["content"]
-                new_message["content"] += content
-                if display:
-                    print(content, end="")
-        return new_message
+        message = response["choices"][0]["message"]
+        content = message.get("content", None)
+        role = message.get("role", None)
+        if display:
+            print(role, content, sep=": ")
+        return message
 
     def _get_content_streamed(self, response):
         message = ""
@@ -206,6 +197,12 @@ class Chatbot:
                 if "\n" in content:
                     yield message
                     message = ""
+
+    def _get_title(self, conversation_id):
+        conversation_attributes = self.database._get_conversation_attributes(
+            conversation_id
+        )
+        return conversation_attributes.get("title", None)
 
     def _submit_prompt(
         self,
